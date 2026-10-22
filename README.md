@@ -4,7 +4,7 @@ Scripts for performing multi-objective optimization for pressure-dominated CO$_2
 as described in:
 > Pettersson, P., Krumscheid, S. and Gasda, S. (2025) "Cooperative games defined by multi-objective optimization in competition for subsurface resources." arXiv preprint arXiv:2502.19987. 
 
-A model for the Bjarmeland Formation in Barents Sea is inititalized via the Matlab Reservoir Simulation Toolbox (MRST). Multi-objective optimization is then performed using either NSGA-II, or the weighted sum method.
+A model for the Bjarmeland Formation in the Barents Sea is initialized via the Matlab Reservoir Simulation Toolbox (MRST). Multi-objective optimization is then performed using either NSGA-II, or the weighted sum method.
 
 
 ## Requirements
@@ -30,8 +30,8 @@ for an appropriate tradeoff between computational cost and accuracy.
 ```matlab
 main_generate_MOO_results;
 ```
-3. For the first time running, answer yes ('Y') to downloading reservoir data via MRST.
-4. To visualize the results, run
+4. For the first time running, answer yes ('Y') to downloading reservoir data via MRST.
+5. To visualize the results, run
 ```matlab
 plot_Pareto_fronts;
 ```
@@ -39,7 +39,7 @@ plot_Pareto_fronts;
 
 
 ## Notes for use
-* The settings for the parameters of the evolutionary algorithms in ```matlab plot_Pareto_fronts.m``` need to match those
+* The settings for the parameters of the evolutionary algorithms in ```plot_Pareto_fronts.m``` need to match those
 used in ```main_generate_MOO_results.m``` (or any other existing simulation results).
 
 * The computational cost for running well-resolved multi-objective optimization for all coalition
