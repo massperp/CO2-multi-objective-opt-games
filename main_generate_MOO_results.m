@@ -1,0 +1,278 @@
+
+% Download the following to the main folder:
+% MRST [tested with release 2026a] (https://www.sintef.no/projectweb/mrst/download/),
+% Set Partition [tested with version 1.6.0] (https://se.mathworks.com/matlabcentral/fileexchange/24133-set-partition/files/SetPartFolder),
+% PlatEMO [tested with release 4.16] (https://github.com/BIMK/PlatEMO).
+% Comment L269 (step_header(i);) in simulateScheduleAD.m in MRST to save comp time
+% by suppressing printouts of time-stepping
+% The scripts have been tested in Matlab R2025b
+
+% Set paths to MRST, Set Partition, and PlatEMO
+addpath(genpath(pwd));
+% save current working directory (absolute file path)
+path_main = pwd;
+
+
+% Ensure the Statistics and Machine Learning Toolbox implementation is
+% first via rehash
+path_to_stats = '/Applications/MATLAB_R2025b.app/toolbox/stats/stats'; % user specific
+addpath(path_to_stats, '-begin');
+rehash toolboxcache;
+
+% Initialize MRST
+mrstModule add ad-core optimization
+startup;
+
+% Set 'sol_meth' to solve full multi-objective optimization (MOO) for the Pareto front,
+% or the weighted sum method (WSM) to
+% solve a number of single-objective optimization problems
+
+sol_meth = 'MOO';
+%sol_meth = 'WSM';
+
+% Population parameters for the evolutionary algorithms
+N_SO = 20; % Population size, initialization
+maxFE_init = 800; % Maximum function evals for initialization (for each end point)
+N = 40; % Population size
+maxFE = 2000; % Maximum function evals for main multi-obj. optimization
+
+% Can choose to run initialization (only), or load existing data if
+% available
+run_init = true;
+run_PF = true;
+
+if sol_meth == 'MOO'
+    opt_meth = @NSGAII;
+elseif sol_meth == 'WSM'
+    opt_meth = @CSO;
+end
+
+% Setup of agents and wells
+num_agents = 3; % Number of agents
+num_wells = 9; % Number of wells
+inj_time = 40; % Injection time in years
+num_ctrls = 8; % Number of injection controls; inj_time should be a multiple of num_ctrls
+
+
+% Array to match wells with agents
+well_ind_agents = cell(num_agents,1);
+well_ind_agents{1} = [1 2 3 4];
+well_ind_agents{2} = [5 6 7];
+well_ind_agents{3} = [8 9];
+
+
+% Initialize the physical problem setup
+[model, schedule, initState, seainfo, other] = make_Bjarmeland_model_inj_only(num_wells, num_ctrls, inj_time);
+
+% The cell pressure limit is set to be 90% of the overburden pressure,
+% which is the weight of the fluid and solid layers lying on top of the
+% formation we are injecting into.
+
+P_over = computeOverburdenPressure(model.G, model.rock, seainfo.seafloor_depth, model.fluid.rhoWS);
+p_lim_fac   = 0.9;
+P_limit     = P_over * p_lim_fac;
+
+% Set constraint function.
+g1 = @(u) evaluate_pressure_constr(u, P_limit, initState, model, schedule);
+
+% Minimum/maximum availability constraints, later scaled to Mt/year.
+xup = repmat(0.3,1,num_ctrls*num_wells);
+xlow = repmat(0.01,1,num_ctrls*num_wells);
+ind_wells_late_start = [1 4];
+for j=1:numel(ind_wells_late_start)
+    xlow((ind_wells_late_start(j)-1)*num_ctrls+1) = 0;
+    xup((ind_wells_late_start(j)-1)*num_ctrls+1) = 0;
+end
+
+
+% Array to match controls with design variables pertaining to particular
+% wells
+ctrl_ind_well = zeros(num_wells, num_ctrls);
+for ind_wells = 1:num_wells
+    ctrl_ind_well(ind_wells,:) = num_ctrls*(ind_wells-1)+1:num_ctrls*ind_wells;
+end
+
+design_ind_agents = cell(num_agents,1);
+for ind_agents = 1:num_agents
+    for ind_wells = 1:length(well_ind_agents{ind_agents})
+        design_ind_agents{ind_agents} = [design_ind_agents{ind_agents} ctrl_ind_well(well_ind_agents{ind_agents}(ind_wells),:)];
+    end
+end
+
+% Define the set of all coalition structures for num_wells agents.
+coal_struct_list = [];
+for n=1:num_agents
+    coal_struct_list = [coal_struct_list; SetPartition(num_agents, n)];
+end
+num_CS = numel(coal_struct_list);
+
+% Folders for saving results
+folder_name = [path_main,'/results_', sol_meth, '_NW_', num2str(num_wells)];
+
+% Check if folders for saving results already exist
+if not(isfolder(folder_name))
+    mkdir(folder_name)
+end
+
+% Loop over all or subset of coalition structures (no need to do the first
+% (grand coal.))
+for ind_CS = 2:num_CS
+    switch sol_meth
+        case 'MOO'
+            folder_name_sub = [folder_name,'/CS_ind_', num2str(ind_CS), '_N', num2str(N),'_maxFE',num2str(maxFE),'_SO_init_', num2str(maxFE_init)];
+        case 'WSM'
+            folder_name_sub = [folder_name,'/CS_ind_', num2str(ind_CS), '_N', num2str(N),'_maxFE',num2str(maxFE)];
+    end
+    % Check if folders for saving results already exist
+    if not(isfolder(folder_name_sub))
+        mkdir(folder_name_sub)
+    end
+
+    num_coal = numel(coal_struct_list{ind_CS});
+
+    % Map design variable indices to corresponding coalition
+    coal_indices = cell(num_coal,1);
+    for ind_C = 1:num_coal
+        agents_in_C = coal_struct_list{ind_CS}{ind_C};
+        coal_indices_temp = [];
+        for ind_agents = 1:numel(agents_in_C)
+            coal_indices_temp = [coal_indices_temp design_ind_agents{coal_struct_list{ind_CS}{ind_C}(ind_agents)}];
+        end
+        coal_indices{ind_C} = coal_indices_temp(:);
+    end
+
+    switch sol_meth
+        case 'MOO'
+            %if sol_meth == 'MOO'
+            % Set objective function
+            obj_fun = {@(u) -sum(u(coal_indices{1}))};
+            for ind_C = 2:num_coal
+                obj_fun = {obj_fun{1:ind_C-1}, @(u) -sum(u(coal_indices{ind_C}))};
+            end
+
+            % Initial function using Latin Hypercube sampling
+
+            f0 = @(N) repmat(xup-xlow,N,1).*lhsdesign(N,num_ctrls*num_wells)+repmat(xlow,N,1);
+
+            if ind_CS == 1
+                % For single-obj opt, use CSO
+                opt_meth = @CSO;
+                f0 = @(N) [xlow; repmat((xup-xlow),N-1,1).*lhsdesign(N-1,num_ctrls*num_wells)+repmat(xlow,N-1,1)];
+                [Dec, Obj, Con] = platemo('algorithm',opt_meth, 'objFcn',obj_fun,'conFcn',g1, 'encoding', ones(1,num_wells*num_ctrls),'lower',0.01*ones(1,num_wells*num_ctrls),'upper',0.3*ones(1,num_wells*num_ctrls),'initFcn',f0,'N',N,'maxFE',maxFE);
+
+            elseif ind_CS > 1
+                if run_init
+
+                    % First compute SOO solution to initialize MOO
+                    tol = 1e-3;
+                    wts = tol*ones(num_coal)+(1-tol)*eye(num_coal);
+                    % Loop over all weights for the current CS
+                    Dec_init = zeros(num_coal, num_ctrls*num_wells);
+                    for ind_wts = 1:length(wts)
+                        % Assemble objective function for the initialization
+                        obj_fun_init = @(u) 0;
+                        for ind_C = 1:num_coal
+                            %obj_fun_init = @(u) obj_fun_init(u) - wts(ind_C,ind_wts)*sum(u(coal_indices{ind_C}));
+                            obj_fun_init = @(u) obj_fun_init(u) - wts(ind_C,ind_wts)*sum(u(:,coal_indices{ind_C}),2);
+                        end
+
+                        f0_SO = @(N) [xlow; repmat((xup-xlow),N-1,1).*lhsdesign(N-1,num_ctrls*num_wells)+repmat(xlow,N-1,1)];
+
+                        [Dec_temp Obj_temp Con_temp ] = platemo('algorithm', @CSO, 'objFcn',obj_fun_init,'conFcn',g1, 'encoding', ones(1,num_wells*num_ctrls),'lower',xlow,'upper',xup,'N',N_SO,'maxFE',maxFE_init, 'initFcn', f0_SO);
+                        ind_min_Con = find(Con_temp == min(Con_temp));
+                        ind_max_neg_Con = find(Con_temp == max(Con_temp(Con_temp<0)));
+
+                        Dec_init(ind_wts,:) = Dec_temp(ind_max_neg_Con,:);
+                    end
+                    % Save initialization results
+                    fname = [folder_name_sub,'/Dec_init.mat'];
+                    save(fname,'Dec_init')
+                    fname = [folder_name_sub,'/Dec_init.txt'];
+                    writematrix(Dec_init,fname);
+                else
+                    % If initialization has been precomuted:
+                    load([folder_name_sub,'/Dec_init']);
+                end
+
+                %Initial function
+                f0 = @(N) [Dec_init(1:N<=num_coal,:)*(N<=num_coal); zeros(N-num_coal,num_ctrls*num_wells)*(N>num_coal)]  + [Dec_init(1:min(N,num_coal),:);repmat((xup-xlow),N-num_coal,1).*lhsdesign(N-num_coal,num_ctrls*num_wells)+repmat(xlow,N-num_coal,1)]*(N>num_coal);
+                % Optimization
+                [Dec Obj Con ] = platemo('algorithm',opt_meth, 'objFcn',obj_fun,'conFcn',g1, 'encoding', ones(1,num_wells*num_ctrls),'lower',xlow,'upper',xup,'initFcn',f0,'N',N,'maxFE',maxFE);
+            end
+            % Save results
+            fname = [folder_name_sub,'/Obj.mat'];
+            save(fname,'Obj')
+            fname = [folder_name_sub,'/Obj.txt'];
+            writematrix(Obj,fname);
+
+            fname = [folder_name_sub,'/Dec.mat'];
+            save(fname,'Dec')
+            fname = [folder_name_sub,'/Dec.txt'];
+            writematrix(Dec,fname);
+
+            fname = [folder_name_sub,'/Con.mat'];
+            save(fname,'Con')
+            fname = [folder_name_sub,'/Con.txt'];
+            writematrix(Con,fname);
+
+        case 'WSM'
+
+            % Determine a 'resolution' of the discretization of weights of the various
+            % coalitions. The weights will then be determined differently depending on
+            % the number of coalitions
+            % Need to set and loop over weights when using WSM
+            % To be used with three coalitions
+            if num_coal == 1
+                w_disc = 1;
+            elseif num_coal == 2
+                % To be used with two coalitions:
+                w_disc = linspace(0,1,11);
+            elseif num_coal >= 3
+                w_disc = linspace(0,1,6);
+            end
+
+            wts = w_disc;
+            for n=2:num_coal
+                %cand_wts = combvec(wts,w_disc);
+
+                %T = combinations(wts,w_disc);
+                %cand_wts = table2array(combinations(wts,w_disc))';
+
+                [I1 I2] = ndgrid([1:size(wts,2)],[1:size(w_disc,2)]);
+                cand_wts = [wts(:,I1(:)); w_disc(I2(:))];
+
+                perm_ind = sum(cand_wts,1)<=1;
+                wts = cand_wts(:,perm_ind);
+            end
+            perm_ind_glob = sum(wts,1) == 1;
+            % Obtain the final weights for CS with index ind_CS
+            wts = wts(:,perm_ind_glob);
+
+            % Loop over all weights for the current CS
+            for ind_wts = 1:length(wts)
+                % Assemble objective function
+                obj_fun = @(u) 0;
+                for ind_C = 1:num_coal
+                    obj_fun = @(u) obj_fun(u) - wts(ind_C,ind_wts)*sum(u(coal_indices{ind_C}));
+                end
+
+                % Optimization
+                [Dec Obj Con ] = platemo('algorithm', opt_meth, 'objFcn',obj_fun,'conFcn',g1, 'encoding', ones(1,num_wells*num_ctrls),'lower',xlow,'upper', xup,'N',N,'maxFE',maxFE);
+                % Reset path after running PlatEMO
+                cd(path_main)
+                fname = [folder_name_sub,'/Obj_',num2str(ind_wts),'.mat'];
+                save(fname,'Obj');
+                fname = [folder_name_sub,'/Dec_',num2str(ind_wts),'.mat'];
+                save(fname,'Dec');
+                fname = [folder_name_sub,'/Con_',num2str(ind_wts),'.mat'];
+                save(fname,'Con');
+            end
+
+            % Save the weights
+            fname = [folder_name_sub,'/wts.mat'];
+            save(fname,'wts');
+    end
+
+    % Reset path after running PlatEMO
+    cd(path_main)
+end
