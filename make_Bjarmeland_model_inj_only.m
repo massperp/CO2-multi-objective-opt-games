@@ -8,25 +8,11 @@ function [ model, schedule, initState, seainfo, other ] = make_Bjarmeland_model_
 %       http://www.npd.no/en/Publications/Reports/Compiled-CO2-atlas/
 
 %{
-Copyright 2009-2023 SINTEF Digital, Mathematics & Cybernetics.
 
-This file is part of The MATLAB Reservoir Simulation Toolbox (MRST).
+This file is a direct adaptation of a script in the MATLAB Reservoir Simulation Toolbox (MRST).
 
-MRST is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-MRST is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with MRST.  If not, see <http://www.gnu.org/licenses/>.
 %}
 
-    %addpath '/Users/pepe/Documents/MATLAB/mrst-2023b'
     opt.coarsening      = 10;
     opt.surface_pressure = 1 * atm;
     opt.btype           = 'pressure';   % 'pressure' for hydrostatic or 'flux' for no-flow
@@ -35,49 +21,35 @@ along with MRST.  If not, see <http://www.gnu.org/licenses/>.
     ctr_period          = opt.isteps/num_ctrls; %3; % Control period in years
     %opt.mtime           = 500;         % migration period (years)
     %opt.msteps          = 50;
+
+    % Original MRST settings, not used:
     opt.wcoord          = [1.0250e6 8.0543e6; ...
                            1.0590e6 8.1543e6];      % well coordinates [x1 y1; x2 y2; ...]
     opt.qt              = [3.7028e12; 2.6198e12];   % total injected mass per well (kg of CO2)
                                                     % can be taken from the structural trapping 
                                                     % capacity upstream from well location, or 
                                                    % a scaled value
+    % Well locations for numerical examples                                               
     if num_wells == 3                                               
         opt.wcoord  = [ 1.0170e6 8.0883e6; 1.0750e6 8.1743e6; 1.0690e6 8.1323e6 ]; % physical coordinates                                                
-        opt.qt = [1e11; 1e11; 1e11];
     elseif num_wells == 4
         opt.wcoord  = [ 1.0170e6 8.0883e6; 1.0470e6 8.1703e6; 1.0690e6 8.1323e6; 1.0750e6 8.1743e6 ]; % physical coordinates
-        opt.qt = [1e11; 1e11; 1e11; 1e11];
-        
+         
     elseif num_wells == 9
         opt.wcoord  = [ 1.0170e6 8.0883e6; 1.0170e6 8.0683e6; 1.0170e6 8.0483e6; %Vertical around prev. W1
-            %1.0750e6 8.1743e6; 1.0550e6 8.1743e6; 1.0350e6 8.1743e6;
             1.0750e6 8.1743e6; 1.0490e6 8.1683e6; 1.0350e6 8.1743e6;
-            %1.0690e6 8.1323e6; 1.0390e6 8.1323e6; 1.0690e6 8.1023e6 ]; % physical coordinates  
             1.0690e6 8.1323e6; 1.0330e6 8.1223e6; 1.0690e6 8.1023e6 ]; % physical coordinates  
-        opt.qt = [1e11; 1e11; 1e11; 1e11; 1e11; 1e11; 1e11; 1e11; 1e11];
-
+        
         opt.wcoord  = [1.0170e6 8.0683e6; 1.0170e6 8.0883e6;  1.0150e6 8.1083e6; 1.0330e6 8.1223e6;%Vertical around prev. W1
             1.0750e6 8.1743e6; 1.0490e6 8.1683e6; 1.0350e6 8.1743e6;
-            %1.0690e6 8.1323e6; 1.0390e6 8.1323e6; 1.0690e6 8.1023e6 ]; % physical coordinates  
             1.0690e6 8.1323e6; 1.0690e6 8.1023e6 ]; % physical coordinates  
-        opt.qt = [1e11; 1e11; 1e11; 1e11; 1e11; 1e11; 1e11; 1e11; 1e11];
     end
-    
+    opt.qt = 1e11*ones(num_wells,1);
     opt.wvals = []; % if empty, uses opt.qt, otherwise uses opt.wvals
-    
-    
-    %valid_argnames = {'arg_name1', 'arg_name2', 'arg_name3'};
-
+   
     
     if ismember('agent', varargin(1:2:end))
-    %if varargin{1} == 'agent' %ismember('agent', varargin(1:2:end))
-        
-        %'agent'
-%         for K = 1 : nargin
-%             fprintf('input #%d came from variable "%s"\n', K, inputname(K) );
-%         end
         ind_agent = varargin{2};
-        ind_agent
         opt.wcoord = opt.wcoord(ind_agent,:);
         opt.qt = opt.qt(ind_agent);
     end
@@ -116,10 +88,7 @@ along with MRST.  If not, see <http://www.gnu.org/licenses/>.
                         'top_trap'     , dh);
              
     model       = CO2VEBlackOilTypeModel(Gt, rock2D, fluid);
-    %return
-    % possibly required variables (especially for post-processing):
-    % % % other.ta                = trapAnalysis_PP(Gt, false);
-    %Changed Oct 2026
+
     other.ta                = trapAnalysis(Gt, false);
     other.surface_pressure  = opt.surface_pressure;
     other.btype             = opt.btype;
@@ -157,27 +126,19 @@ along with MRST.  If not, see <http://www.gnu.org/licenses/>.
                     'Radius',   0.3 );
     end
     W = convertwellsVE(W, Gt.parent, Gt, rock2D, 'ip_tpf');
-%     W_shut = W;
-%     for i = 1:numel(W_shut)
-%         W_shut(i).type  = 'rate';
-%         W_shut(i).val   = sqrt(eps); % the minimum value
-%     end
+
     schedule.control(1).W = W;
-%    schedule.control(2).W = W_shut;
     dTi         = convertFrom(opt.itime,year) / opt.isteps;
-    %%dTm         = convertFrom(opt.mtime,year) / opt.msteps;
     istepvec    = ones(opt.isteps, 1) * dTi; % Time intervals in seconds
-    %%mstepvec    = ones(opt.msteps, 1) * dTm;
     schedule.step.val       = istepvec;%%[istepvec; mstepvec];
-    %schedule.step.control   = ones(opt.isteps, 1);%%[ones(opt.isteps, 1); ones(opt.msteps, 1) * 2];
+
     
     
     %%% Adding control to every (ctr_period) time step, based on Moyners script for
     %%% variable rates
     schedule.step.control(1:opt.isteps) = kron(1:opt.isteps/ctr_period,ones(1, ctr_period))';
     schedule.control = repmat(schedule.control, opt.isteps/ctr_period, 1);
-    %[schedule] = rate2scheduleVarRates(0.001*[0:60], schedule.control(1).W, schedule.step.val, schedule);
-
+ 
     %{
     % Optional plotting to check placement and rates:
     figure(100); clf; set(gcf,'Position',[1 1 953 615])
@@ -209,8 +170,6 @@ along with MRST.  If not, see <http://www.gnu.org/licenses/>.
     for i = 1:numel(schedule.control)
         schedule.control(i).bc = bc;
     end
-    
-    
 end
 
 

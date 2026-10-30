@@ -1,197 +1,93 @@
+% Plot the Pareto fronts for all computed coalition structures.
+%
+%   Reads the results written by main_generate_MOO_results. The settings
+%   come from problem_config.m, so they match the optimization run
+%   automatically. Only feasible, non-dominated points are plotted.
 
-addpath(genpath('Set-Partition'))
+path_main = pwd;
+addpath(genpath(fullfile(path_main, 'Set-Partition')));
 
-sol_meth = 'WSM';
-sol_meth = 'MOO';
-
-num_agents = 3;
-num_wells = 9;
-num_ctrls = 8;
-inj_time = 40;
-inj_period = inj_time/num_ctrls;
-
-rhoCref  = 760;
+% Load settings from config file
+cfg = problem_config();
 
 
-% Array to match wells with agents
-well_ind_agents = cell(num_agents,1);
-well_ind_agents{1} = [1 2 3 4];
-well_ind_agents{2} = [5 6 7];
-well_ind_agents{3} = [8 9];
-
-% Initialize the physical problem setup
-%[model, schedule, initState, seainfo, other] = makeBjarmelandModel_inj_only(num_wells, num_ctrls, inj_time);
-
-
-% Array to match controls with design variables pertaining to particular
-% wells
-ctrl_ind_well = zeros(num_wells, num_ctrls);
-for ind_wells = 1:num_wells
-    ctrl_ind_well(ind_wells,:) = num_ctrls*(ind_wells-1)+1:num_ctrls*ind_wells;
-end
-
-design_ind_agents = cell(num_agents,1);
-for ind_agents = 1:num_agents
-    for ind_wells = 1:length(well_ind_agents{ind_agents})
-        design_ind_agents{ind_agents} = [design_ind_agents{ind_agents} ctrl_ind_well(well_ind_agents{ind_agents}(ind_wells),:)];
-    end
-end
-
-% Define the set of all coalition structures for num_wells agents.
-coal_struct_list = [];
-for n=1:num_agents
-    coal_struct_list = [coal_struct_list; SetPartition(num_agents, n)];
-end
-num_CS = numel(coal_struct_list);
+CS_to_plot = 2:cfg.num_CS;   % index 1 is the grand coalition (a single value)
 
 symsize = 30;
+fsize   = 15;
+marker  = {symsize, 'MarkerFaceColor', '#0072BD', 'MarkerEdgeColor', 'k', 'LineWidth', 0.2};
+latex   = {'FontWeight', 'normal', 'Interpreter', 'latex', 'FontSize', fsize};
 
-% Parameters for the evolutionary algorithms, need to match existing data:
-maxFE_init = 100;
-N_SO = 20;
-N = 20;
-maxFE = 400;
+fig1 = figure('Position', [100, 100, 1300, 360]);
+tlo1 = tiledlayout(fig1, 1, numel(CS_to_plot), 'Padding', 'compact');
 
-maxFE_init = 500;
-N_SO = 20; 
-N = 40;
-maxFE = 2000;
+Obj_PF_all = cell(cfg.num_CS, 1);
+for ind_CS = CS_to_plot
+    nexttile(tlo1);
+    coal_indices = cfg.coal_indices{ind_CS};
+    CS = cfg.coal_struct_list{ind_CS};
+    num_coal = numel(CS);
+    folder_name_sub = results_path(cfg, path_main, ind_CS);
 
-maxFE_init = 5000;
-N_SO = 50;
-N = 200;
-maxFE = 15000;
-
-%maxFE = 400;
-
-year = 31556952;
-
-% Minimum/maximum availability constraints, later scaled to Mt/year.
-% The settings need to match those in main_generate_MOO_results
-xup = repmat(0.3,1,num_ctrls*num_wells);
-xlow = repmat(0.01,1,num_ctrls*num_wells);
-ind_wells_late_start = [1 4];
-for j=1:numel(ind_wells_late_start)
-    xlow((ind_wells_late_start(j)-1)*num_ctrls+1) = 0;
-    xup((ind_wells_late_start(j)-1)*num_ctrls+1) = 0;
-end
-
-folder_name = ['results_', sol_meth, '_NW_', num2str(num_wells)];
-
-fig1 = figure('Position',[100,100,1300,360]);
-tlo1 = tiledlayout(fig1,1,4);
-tlo1.Padding = 'compact';
-fsize = 15;
-
-Obj_PF_all = cell(1,5);
-% Plot Pareto front for MOO methods
-for ind_CS = 2 %:5
-    ax = nexttile(tlo1);
-
-    num_coal = numel(coal_struct_list{ind_CS});
-
-    % Map design variable indices to corresponding coalition
-    coal_indices = cell(num_coal,1);
-    for ind_C = 1:num_coal
-        agents_in_C = coal_struct_list{ind_CS}{ind_C};
-        coal_indices_temp = [];
-        for ind_agents = 1:numel(agents_in_C)
-            coal_indices_temp = [coal_indices_temp design_ind_agents{coal_struct_list{ind_CS}{ind_C}(ind_agents)}];
-        end
-        coal_indices{ind_C} = coal_indices_temp(:);
+    if ~isfolder(folder_name_sub)
+        warning('No results for coalition structure %d in %s; skipping.', ind_CS, folder_name_sub);
+        continue
     end
 
-    switch sol_meth
+    % Collect decision variables and constraint values of the final populations
+    switch cfg.sol_meth
         case 'MOO'
-            folder_name_sub = [folder_name,'/CS_ind_', num2str(ind_CS),'_N', num2str(N),'_maxFE',num2str(maxFE),'_SO_init_', num2str(maxFE_init)];
-            temp_Obj = load([folder_name_sub, '/Obj.mat']).Obj;
+            Dec = load(fullfile(folder_name_sub, 'Dec.mat')).Dec;
+            Con = load(fullfile(folder_name_sub, 'Con.mat')).Con;
         case 'WSM'
-            folder_name_sub = [folder_name,'/CS_ind_', num2str(ind_CS),'_N', num2str(N),'_maxFE',num2str(maxFE)];
-            load([folder_name_sub, '/wts'])
-            num_wts = size(wts,2);
-            temp_Obj = zeros(num_wts*N, num_coal);
-            for ind_wts = 1:num_wts
-                temp_Dec = load([folder_name_sub, '/Dec_', num2str(ind_wts), '.mat']).Dec;
-                for ind_C = 1:num_coal
-                    temp_Obj((ind_wts-1)*N+1:ind_wts*N, ind_C) = -sum(temp_Dec(:,coal_indices{ind_C}),2);
-                end
+            wts = load(fullfile(folder_name_sub, 'wts.mat')).wts;
+            Dec = []; Con = [];
+            for ind_wts = 1:size(wts, 2)
+                Dec = [Dec; load(fullfile(folder_name_sub, sprintf('Dec_%d.mat', ind_wts))).Dec]; %#ok<AGROW>
+                Con = [Con; load(fullfile(folder_name_sub, sprintf('Con_%d.mat', ind_wts))).Con]; %#ok<AGROW>
             end
     end
-    
-    PF = [];
-    for n1=1:size(temp_Obj,1)
-        if max(temp_Obj - temp_Obj(n1,:),[],2) >= 0
-            PF = [PF;  temp_Obj(n1,:)];
-        end
+
+    % Injected mass per coalition (Mt), feasible points only
+    feasible = all(Con <= 0, 2);
+    if ~all(feasible)
+        fprintf('CS %d: discarding %d of %d infeasible points.\n', ind_CS, nnz(~feasible), numel(feasible));
+    end
+    W = zeros(nnz(feasible), num_coal);
+    for ind_C = 1:num_coal
+        W(:, ind_C) = cfg.rate2Mt * sum(Dec(feasible, coal_indices{ind_C}), 2);
     end
 
-    Obj_PF = -inj_period * rhoCref * year / 1e6 / 1e3 * PF;
+    % Pareto front (maximization of every coalition's injected mass)
+    Obj_PF = W(is_nondominated(-W), :);
     Obj_PF_all{ind_CS} = Obj_PF;
+
+    % Axis limits: from the minimum admissible injection to 5% above the max
+    lo = cellfun(@(idx) cfg.rate2Mt * sum(cfg.xlow(idx)), coal_indices)';
+    hi = 1.05 * max(Obj_PF, [], 1);
+    coal_label = @(C) ['\{', strjoin(arrayfun(@(a) sprintf('a_%d', a), C, 'UniformOutput', false), ', '), '\}'];
+    labels = arrayfun(@(k) sprintf('$w(C_%d)$ (Mt)', k), 1:num_coal, 'UniformOutput', false);
+    ttl = ['$', strjoin(arrayfun(@(k) sprintf('C_%d = %s', k, coal_label(CS{k})), ...
+        1:num_coal, 'UniformOutput', false), ', '), '$'];
+
     if num_coal == 2
-        scatter(Obj_PF(:,1), Obj_PF(:,2), symsize, "MarkerFaceColor", "#0072BD",  "MarkerEdgeColor", 'k', "LineWidth", 0.2);
-        xtemp = coal_struct_list{ind_CS}{1};
-        ytemp = coal_struct_list{ind_CS}{2};
-        xlab = '\{'; ylab = '\{';
-        for ind_x = 1:length(xtemp)
-            xlab = [xlab, 'a_', num2str(xtemp(ind_x))];
-            if ind_x < length(xtemp)
-                xlab = [xlab, ' ,'];
-            end
-        end
-        for ind_y = 1:length(ytemp)
-            ylab = [ylab, 'a_', num2str(ytemp(ind_y))];
-            if ind_y < length(ytemp)
-                ylab = [ylab, ' ,'];
-            end
-        end
-
-        xlab = [xlab, '\}']; ylab = [ylab, '\}'];
-
-        % Labels and title:
-        xlabel(['$w \left( C_1 \right)$', ' (Mt)'], 'FontWeight','Normal','interpreter','latex', 'FontSize',fsize+1);
-        ylabel(['$w \left( C_2 \right)$', ' (Mt)'], 'FontWeight','Normal','interpreter','latex', 'FontSize',fsize+1);
-
-        title(['$C_1 = ', xlab, ',\ C_2=', ylab, '$'],'FontWeight','Normal','interpreter','latex', 'FontSize',fsize);
-
-        xmin = sum(xlow(coal_indices{1})*inj_period*rhoCref * year / 1e6 / 1e3);
-        ymin = sum(xlow(coal_indices{2})*inj_period*rhoCref * year / 1e6 / 1e3);
-        xmax = 1.05*max(Obj_PF(:,1));
-        ymax = 1.05*max(Obj_PF(:,2));
-
-        axis([xmin xmax ymin ymax]);
+        scatter(Obj_PF(:,1), Obj_PF(:,2), marker{:});
+        axis([lo(1) hi(1) lo(2) hi(2)]);
     elseif num_coal == 3
+        % The surface is a linear interpolation between the computed points.
         xlin = linspace(min(Obj_PF(:,1)), max(Obj_PF(:,1)), 40);
         ylin = linspace(min(Obj_PF(:,2)), max(Obj_PF(:,2)), 40);
-        [X,Y] = meshgrid(xlin, ylin);
-
-        Z = griddata(Obj_PF(:,1),Obj_PF(:,2),Obj_PF(:,3),X,Y,'linear');
-       
-        surf(X,Y,Z)
-
-        shading interp
-        alpha(0.6);
-        axis tight; hold on
-
-        scatter3(Obj_PF(:,1), Obj_PF(:,2), Obj_PF(:,3),symsize, "MarkerEdgeColor", 'k', "LineWidth", 0.2, "MarkerFaceColor","#0072BD")
-
-        xlabel(['$w \left( C_1 \right)$', ' (Mt)'], 'FontWeight','Normal','interpreter','latex', 'FontSize',fsize);
-        ylabel(['$w \left( C_2 \right)$', ' (Mt)'], 'FontWeight','Normal','interpreter','latex', 'FontSize',fsize);
-        zlabel(['$w \left( C_3 \right)$', ' (Mt)'], 'FontWeight','Normal','interpreter','latex', 'FontSize',fsize);
-        title('$C_1 = \{ a_1\}, C_2 = \{ a_2\}, C_3 = \{ a_3\}$', 'FontWeight','Normal','interpreter','latex', 'FontSize',fsize);
-
-        view(120,10)
-
-        xmin = sum(xlow(coal_indices{1})*inj_period*rhoCref * year / 1e6 / 1e3);
-        ymin = sum(xlow(coal_indices{2})*inj_period*rhoCref * year / 1e6 / 1e3);
-        zmin = sum(xlow(coal_indices{3})*inj_period*rhoCref * year / 1e6 / 1e3);
-        xmax = 1.05*max(Obj_PF(:,1));
-        ymax = 1.05*max(Obj_PF(:,2));
-        zmax = 1.05*max(Obj_PF(:,3));
-
-        axis([xmin xmax ymin ymax zmin zmax]);
-
-        a = gca;
-        a.XAxis.TickLabelRotation = 0;
+        [X, Y] = meshgrid(xlin, ylin);
+        Z = griddata(Obj_PF(:,1), Obj_PF(:,2), Obj_PF(:,3), X, Y, 'linear');
+        surf(X, Y, Z, 'EdgeColor', 'none', 'FaceAlpha', 0.6); hold on
+        scatter3(Obj_PF(:,1), Obj_PF(:,2), Obj_PF(:,3), marker{:});
+        zlabel(labels{3}, latex{:});
+        view(120, 10);
+        axis([lo(1) hi(1) lo(2) hi(2) lo(3) hi(3)]);
+        ax = gca; ax.XAxis.TickLabelRotation = 0;
     end
-    set(gca, 'fontsize', fsize); % increase fontsize on axes.
+    xlabel(labels{1}, latex{:});
+    ylabel(labels{2}, latex{:});
+    title(ttl, latex{:});
+    set(gca, 'FontSize', fsize);
 end
