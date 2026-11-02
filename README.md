@@ -44,7 +44,7 @@ Results are written to `results_<sol_meth>_NW_9/`, one subfolder per coalition s
 
 ## Notes
 * Both scripts read their settings from `problem_config.m`, so the plots always match the latest run. To plot older results, set the same parameters there.
-* Optimizing all coalition structures is expensive. Coalition structures are independent, so they can be run in parallel by setting `CS_to_run` in `main_generate_MOO_results.m`, or the cost can be reduced with the hierarchical property proven in Pettersson et al. (2025).
+* Coalition structures are independent, so they can be run in parallel by setting `CS_to_run` in `main_generate_MOO_results.m`, or the cost can be reduced with the hierarchical property proven in Pettersson et al. (2025).
 * MRST prints warning messages that can be ignored.
 * The computational cost for running well-resolved multi-objective optimization for all coalition
 structures is very high, so it might be worthwhile running independent coalition structures in parallel, or using the hierarchical property

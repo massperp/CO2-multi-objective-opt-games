@@ -9,6 +9,23 @@ function [ model, schedule, initState, seainfo, other ] = make_Bjarmeland_model_
 
 %{
 
+Copyright 2009-2023 SINTEF Digital, Mathematics & Cybernetics.
+
+This file is part of The MATLAB Reservoir Simulation Toolbox (MRST).
+
+MRST is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+MRST is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with MRST.  If not, see <http://www.gnu.org/licenses/>.
+
 This file is a direct adaptation of a script in the MATLAB Reservoir Simulation Toolbox (MRST).
 
 %}
@@ -33,13 +50,8 @@ This file is a direct adaptation of a script in the MATLAB Reservoir Simulation 
     if num_wells == 3                                               
         opt.wcoord  = [ 1.0170e6 8.0883e6; 1.0750e6 8.1743e6; 1.0690e6 8.1323e6 ]; % physical coordinates                                                
     elseif num_wells == 4
-        opt.wcoord  = [ 1.0170e6 8.0883e6; 1.0470e6 8.1703e6; 1.0690e6 8.1323e6; 1.0750e6 8.1743e6 ]; % physical coordinates
-         
-    elseif num_wells == 9
-        opt.wcoord  = [ 1.0170e6 8.0883e6; 1.0170e6 8.0683e6; 1.0170e6 8.0483e6; %Vertical around prev. W1
-            1.0750e6 8.1743e6; 1.0490e6 8.1683e6; 1.0350e6 8.1743e6;
-            1.0690e6 8.1323e6; 1.0330e6 8.1223e6; 1.0690e6 8.1023e6 ]; % physical coordinates  
-        
+        opt.wcoord  = [ 1.0170e6 8.0883e6; 1.0470e6 8.1703e6; 1.0690e6 8.1323e6; 1.0750e6 8.1743e6 ]; % physical coordinates   
+    elseif num_wells == 9    
         opt.wcoord  = [1.0170e6 8.0683e6; 1.0170e6 8.0883e6;  1.0150e6 8.1083e6; 1.0330e6 8.1223e6;%Vertical around prev. W1
             1.0750e6 8.1743e6; 1.0490e6 8.1683e6; 1.0350e6 8.1743e6;
             1.0690e6 8.1323e6; 1.0690e6 8.1023e6 ]; % physical coordinates  

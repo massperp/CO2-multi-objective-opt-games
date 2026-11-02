@@ -35,14 +35,10 @@ run_init = true;
 
 assert(any(strcmp(cfg.sol_meth, {'MOO', 'WSM'})), 'Unknown sol_meth ''%s''.', cfg.sol_meth);
 num_vars = cfg.num_vars;
+% Minimum/maximum availability constraints, later scaled to Mt/year.
 xlow = cfg.xlow;
 xup  = cfg.xup;
-lhs  = @(n) (xup - xlow) .* lhsdesign(n, num_vars) + xlow;   % Latin hypercube in [xlow, xup]
 
-% Can choose to run initialization (only), or load existing data if
-% available
-run_init = true;
-%run_PF = true;
 
 
 %% Initialize the physical model setup
@@ -59,9 +55,6 @@ P_limit     = P_over * p_lim_fac;
 % Set constraint function.
 g1 = @(u) evaluate_pressure_constr(u, P_limit, initState, model, schedule);
 
-% Minimum/maximum availability constraints, later scaled to Mt/year.
-xup = cfg.xup;
-xlow = cfg.xlow;
 
 
 %% Folders for saving results
@@ -72,9 +65,8 @@ if not(isfolder(folder_name))
     mkdir(folder_name)
 end
 
-% Loop over all or subset of coalition structures (no need to do the first
-% (grand coal.))
-for ind_CS = 2:5 %CS_to_run
+% Loop over all or subset of coalition structures 
+for ind_CS = CS_to_run
 
     switch cfg.sol_meth
         case 'MOO'
@@ -96,6 +88,8 @@ for ind_CS = 2:5 %CS_to_run
         f0 = @(N) [xlow; repmat((xup-xlow),N-1,1).*lhsdesign(N-1,cfg.num_ctrls*cfg.num_wells)+repmat(xlow,N-1,1)];
         obj_fun = @(u) -sum(u(cfg.coal_indices{ind_CS}{1}));
         [Dec, Obj, Con] = platemo('algorithm',opt_meth, 'objFcn',obj_fun,'conFcn',g1, 'encoding', ones(1,cfg.num_wells*cfg.num_ctrls),'lower',xlow,'upper',xup,'initFcn',f0,'N',cfg.N,'maxFE',cfg.maxFE);
+        cd(path_main);
+
         % Save results
         fname = [folder_name_sub,'/Obj.mat'];
         save(fname,'Obj')
@@ -114,7 +108,6 @@ for ind_CS = 2:5 %CS_to_run
 
     elseif ind_CS > 1
 
-        num_coal = numel(cfg.coal_struct_list{ind_CS});
         coal_indices = cfg.coal_indices{ind_CS};
         num_coal = numel(coal_indices);
 
@@ -142,7 +135,7 @@ for ind_CS = 2:5 %CS_to_run
                             obj_fun_init = @(u) obj_fun_init(u) - wts(ind_C,ind_wts)*sum(u(:,coal_indices{ind_C}),2);
                         end
                         
-                        % Initial function using Latin hypercibe sampling
+                        % Initial function using Latin hypercube sampling
                         f0_SO = @(N) [xlow; repmat((xup-xlow),N-1,1).*lhsdesign(N-1,cfg.num_ctrls*cfg.num_wells)+repmat(xlow,N-1,1)];
 
                         [Dec_temp Obj_temp Con_temp ] = platemo('algorithm', @CSO, 'objFcn',obj_fun_init,'conFcn',g1, 'encoding', ones(1,cfg.num_wells*cfg.num_ctrls),'lower',xlow,'upper',xup,'N',cfg.N_SO,'maxFE',cfg.maxFE_init, 'initFcn', f0_SO);
@@ -183,6 +176,7 @@ for ind_CS = 2:5 %CS_to_run
                 writematrix(Con,fname);
 
             case 'WSM'
+                opt_meth = @CSO;
 
                 % Determine a 'resolution' of the discretization of weights of the various
                 % coalitions. The weights will then be determined differently depending on
